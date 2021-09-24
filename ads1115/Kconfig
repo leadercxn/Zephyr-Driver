@@ -1,0 +1,11 @@
+# Copyright (c) 2021 Jackychen
+# SPDX-License-Identifier: Apache-2.0
+
+menuconfig ADS1115
+	bool "ADS1115 adc collector"
+	depends on I2C
+	help
+	  Enable driver for ADS1115 adc collector
+
+
+
