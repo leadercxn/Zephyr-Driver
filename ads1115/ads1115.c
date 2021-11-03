@@ -27,6 +27,9 @@ LOG_MODULE_REGISTER(ads1115, LOG_LEVEL_INF);
 
 #define ADS1115_AIN_INDEX_MAX	3
 
+#define FSR					6.144
+#define FSR_6144_LSB_SIZE	0.1875	//mV
+
 struct ads1115_data {
 	struct k_timer 			*timer;
 	struct k_work 			sample_worker;
@@ -34,6 +37,7 @@ struct ads1115_data {
 	uint16_t 				i2c_slave_addr;
 
 	uint16_t 				ain_value[4];
+	float					ain_con_value[4];
 };
 
 static int ads1115_init(const struct device *dev);
@@ -226,22 +230,22 @@ static int ads1115_channel_get(const struct device *dev,
 	{
 		case SENSOR_CHAN_CH0:
 			val->val1 = p_ads1115_data->ain_value[0];
-			val->val2 = 0;
+			val->val2 = p_ads1115_data->ain_con_value[0];
 			break;
 
 		case SENSOR_CHAN_CH1:
 			val->val1 = p_ads1115_data->ain_value[1];
-			val->val2 = 0;
+			val->val2 = p_ads1115_data->ain_con_value[1];
 			break;
 
 		case SENSOR_CHAN_CH2:
 			val->val1 = p_ads1115_data->ain_value[2];
-			val->val2 = 0;
+			val->val2 = p_ads1115_data->ain_con_value[2];
 			break;
 
 		case SENSOR_CHAN_CH3:
 			val->val1 = p_ads1115_data->ain_value[3];
-			val->val2 = 0;
+			val->val2 = p_ads1115_data->ain_con_value[3];
 			break;
 
 		default:
@@ -268,7 +272,7 @@ static int ads115_sample_fetch(const struct device *dev,
 
 		do
 		{
-			k_msleep(50);
+			k_msleep(2);
 			ads1115_once_conversion_status_get(p_ads1115_data , &status);
 			//LOG_INF("try %d to get conversion status is 0x%04x",rty,status);
 		}while( (!status) && (rty++ < 3) );
@@ -277,7 +281,9 @@ static int ads115_sample_fetch(const struct device *dev,
 		if(status)
 		{
 			ads1115_reg_read(p_ads1115_data, ADS1115_REG_CONVERSION, &p_ads1115_data->ain_value[i]);
-			LOG_INF("salver_addr 0x%02x get ain%d value 0x%04x",p_ads1115_data->i2c_slave_addr,i,p_ads1115_data->ain_value[i]);
+			p_ads1115_data->ain_con_value[i] = p_ads1115_data->ain_value[i] * FSR_6144_LSB_SIZE;
+
+			LOG_DBG("salver_addr 0x%02x get ain%d value 0x%04x",p_ads1115_data->i2c_slave_addr,i,p_ads1115_data->ain_value[i]);
 		}
 		else
 		{
@@ -315,19 +321,23 @@ static int ads1115_init(const struct device *dev)
 	}
 
 	/* FSR = 6.144 */
-	config &= 0xf1ff;
+	config &= 0xf11f;
 	wr_value = 0;
 	wr_value <<= 9;
-	wr_value |= config;
-	wr_value &= 0x7fff;
-	err = ads1115_reg_write(p_ads1115_data, ADS1115_REG_CONFIG, &wr_value);
+	config |= wr_value;
+	/* DR = 128 SPS */
+	wr_value = 4;
+	wr_value <<= 5;
+	config |= wr_value;
+
+	err = ads1115_reg_write(p_ads1115_data, ADS1115_REG_CONFIG, &config);
 	if(err < 0)
 	{
 		LOG_ERR("ads1115_init err!");
 		return -EINVAL;
 	}
-
-	LOG_INF("ads1115_init 0x%04x finsh",p_ads1115_data->i2c_slave_addr);
+	ads1115_reg_read(p_ads1115_data, ADS1115_REG_CONFIG, &config);
+	LOG_INF("ads1115_init 0x%04x finsh , config reg is 0x%04x",p_ads1115_data->i2c_slave_addr,config);
 	return err;
 }
 
